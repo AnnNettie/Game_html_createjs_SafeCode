@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Код от сейфа</title>
+<meta charset='UTF-8'>
+<script src="lib/easeljs-NEXT.js"></script>
+<script src="lib/preloadjs-NEXT.js"></script>
+<script src="lib/tweenjs-NEXT.js"></script>
+<script src="lib/soundjs-NEXT.js"></script>
+
+<script type="text/javascript">
+
+/******************общие переменные*****************************/
+let stage; //основная сцена, содержащая все примитивы и объекты
+let canvas; //указатель на элемент HTML холст
+
+//ширина, высота холста
+let w = 1280;
+let h = 720;
+let Canvas_Scale = 1; //коэффициенты отличия ширины и высоты окна от изначальных после ресайза
+
+let ScenesArray; //массив с объектами сцен
+let currentSceneIndex = 0;//текущая отображаемая сцена
+  
+let DebuggText;//отладочный текст
+let DebuggText_font = 21;//кегль отладочного текста
+/******************переменные для загрузки картинок***************/
+let LoadSceneObj;
+let preloadManifest;
+let preload;
+
+/*режимы игры: set - установить, inp - угадать, blk - заблокирован, win - отгадан код, anm - анимация*/
+let GameRegims = {together: false, wrepeat: false, moneycount: 0, inputnumb: 'blk'};
+let MoneyMin = 5000;//минимальное количество денег за выигрыш с 6й попытки
+//цветовая гамма
+let bluecol = "#0000ff";
+let lightbluecol = "#f3a64a";
+let lightgreycol = "#808080";
+let darkgreycol = "#505050";
+let greencol = "#008000";
+let orangecol = "#FF4500";
+let lightyellcol = "#ffffaa";
+
+//Загружаемые в игру картинки
+let Mainpicture;
+let Notepicture;
+let Cashpicture;
+//при полной загрузке окна запускается начальная функция игры
+/*window.onload = function() {
+  init();
+}*/
+
+/*******************************родительский класс-шаблон сцены*********************************************/
+class NewScene {
+  constructor() { 
+    this.SceneContainer = new createjs.Container();	//главный контейнер со всеми изображениями в игре    
+  }
+  
+ CreateContainer(){    
+ }
+}
+
+
+/*******************************************класс сцены загрузки картинок*********************************************/
+class LoadScene extends NewScene{
+  constructor() { 
+  super();
+  //кнопка 
+  this.Text_preload_font = 24;
+  this.Text_preload_y = 300;
+  this.ProgressBar_w = 400;
+  this.ProgressBar_h = 60;
+  this.preloadMessageField = new createjs.Text("Загрузка", "bold "+this.Text_preload_font+"px Arial", "#FFFFFF");
+  this.Fone = new createjs.Shape();
+  this.ProgressBar = new createjs.Shape();
+ 
+  //создать главный контейнер с графическими объектами сцены
+  this.CreateContainer();  
+  }
+  
+  CreateContainer(){ 
+    if(this.SceneContainer == null)
+    {
+      alert("LoadScene.SceneContainer не был создан!");
+      return;
+    }
+    
+    if(this.Fone == null)
+    {
+      alert("LoadScene.Fone не был создан!");
+      return;
+    }
+    
+    if(this.ProgressBar == null)
+    {
+      alert("LoadScene.ProgressBar не был создан!");
+      return;
+    }
+    
+    this.SceneContainer.removeAllChildren();
+        
+    this.preloadMessageField.textAlign = "center";
+    this.preloadMessageField.textBaseline = "middle";
+    this.preloadMessageField.font = "bold "+this.Text_preload_font*Canvas_Scale+"px Arial";
+    this.preloadMessageField.x = w*Canvas_Scale / 2;
+    this.preloadMessageField.y = this.Text_preload_y*Canvas_Scale;
+    
+    this.Fone.graphics.clear();
+    this.Fone.graphics.beginLinearGradientFill(["MediumSlateBlue","SkyBlue"],[0, 0.3], w*Canvas_Scale/2, 0, w*Canvas_Scale/2, h*Canvas_Scale).drawRect(0, 0, w*Canvas_Scale, h*Canvas_Scale);
+    
+    this.ProgressBar.graphics.clear();
+    this.ProgressBar.graphics.setStrokeStyle(3).beginStroke("Black").beginLinearGradientFill(["Red","Green"],[0, 1], 0, 0, this.ProgressBar_w*Canvas_Scale, 0).drawRoundRect(0, 0, this.ProgressBar_w*Canvas_Scale, this.ProgressBar_h*Canvas_Scale, this.ProgressBar_h*Canvas_Scale/4);
+    this.ProgressBar.set({regX:this.ProgressBar_w*Canvas_Scale/2, regY:this.ProgressBar_h*Canvas_Scale/2, x:w*Canvas_Scale/2, y:h*Canvas_Scale/2});
+    
+    this.SceneContainer.addChild(this.Fone);
+    this.SceneContainer.addChild(this.preloadMessageField);    
+    this.SceneContainer.addChild(this.ProgressBar); 
+  } 
+  
+  SetProgress(prog)
+  {
+    this.preloadMessageField.text = "Загрузка " + (prog * 100 | 0) + "%";
+      
+    this.ProgressBar.graphics.clear();
+    this.ProgressBar.graphics.beginLinearGradientFill(["Red","Green"],[prog, prog],0, 0, this.ProgressBar_w*Canvas_Scale, 0).drawRoundRect(0, 0, this.ProgressBar_w*Canvas_Scale, this.ProgressBar_h*Canvas_Scale, this.ProgressBar_h*Canvas_Scale/4);
+    this.ProgressBar.set({regX:this.ProgressBar_w*Canvas_Scale/2, regY:this.ProgressBar_h*Canvas_Scale/2, x:w*Canvas_Scale/2, y:h*Canvas_Scale/2});
+  }
+}
+
+/*******************************класс кнопки для перехода к разным сценам*********************************************/
+class ButtonNavigation {
+  constructor(x,y,text) { 
+    this.butX = x;
+    this.butY = y;
+    this.butText = text;
+    this.butR = 30;
+    this.Button_boaders = 7
+    this.Txt_font = 40;
+    this.ButtonObj = new createjs.Container(); 
+    this.ButtonFone = new createjs.Shape();
+    this.MouseOverListener;
+    this.MouseOutListener;
+    this.MouseDownListener;
+    //this.CreateContainer();
+  }
+  
+ CreateContainer(){   
+  if(this.ButtonObj == null)
+  {
+     alert("ButtonObj не был создан!");
+     return;
+  }
+    
+  if(this.ButtonFone == null)
+  {
+    alert("ButtonFone не был создан!");
+    return;
+  }
+  
+  this.ButtonObj.removeAllChildren();
+  
+  this.ButtonFone.graphics.clear();
+  
+  this.ButtonFone.graphics.setStrokeStyle(this.Button_boaders*Canvas_Scale).beginStroke("Black").beginRadialGradientFill(["DarkOrange", "OrangeRed"],[0, 1], 0, 0 , 0, 0, 5, this.butR*Canvas_Scale).drawCircle(0, 0, this.butR*Canvas_Scale);  
+  this.ButtonFone.set({x:(this.butX+this.butR)*Canvas_Scale, y:(this.butY+this.butR)*Canvas_Scale, regX: 0, regY: 0});
+   
+  let triangle = new createjs.Shape();
+  triangle.graphics.setStrokeStyle(1).beginStroke("Black").beginFill("Black").moveTo(0,0).lineTo(this.butR/2*Canvas_Scale,this.butR/2*Canvas_Scale).lineTo(0,this.butR*Canvas_Scale).closePath(); 
+  triangle.set({x:(this.butX+this.butR/6*5)*Canvas_Scale, y:(this.butY+this.butR/2)*Canvas_Scale, regX: 0, regY: 0});
+  
+  
+  let Txt = new createjs.Text(this.butText, ""+this.Txt_font*Canvas_Scale+"px Arial", "White").set({textAlign: "left", textBaseline: "top", x:0, y:0});  //текстовое поле
+  Txt.set({regX: 0, regY: 0, x: (this.butX+2*this.butR+5)*Canvas_Scale, y: (this.butY+this.butR - this.Txt_font/2)*Canvas_Scale}); 
+  
+   this.ButtonObj.addChild(this.ButtonFone);
+   this.ButtonObj.addChild(Txt);
+   this.ButtonObj.addChild(triangle);
+ }  
+ 
+ ListenersOn()
+ {
+  this.MouseOverListener = this.ButtonObj.on('mouseover', this.OnButMouseOver, this);
+  this.MouseOutListener = this.ButtonObj.on('mouseout', this.OnButMouseOut, this);
+  this.MouseDownListener = this.ButtonObj.on('mousedown', this.OnButMouseDown, this);
+ }
+ 
+ ListenersOff()
+ {
+  this.ButtonFone.alpha = 1;
+  this.ButtonObj.off('mouseover', this.MouseOverListener);
+  this.ButtonObj.off('mouseout', this.MouseOutListener);
+  this.ButtonObj.off('mousedown', this.MouseDownListener);
+ }
+ 
+ OnButMouseOver()
+ {
+    this.ButtonFone.alpha = 0.8;
+    OnStageUpdate();
+ }
+ 
+ OnButMouseOut()
+ {
+    this.ButtonFone.alpha = 1;
+    OnStageUpdate();
+ }
+ 
+ OnButMouseDown()
+ {
+    SetNextScene(); 
+ }
+}
+
+/*******************************класс кнопки на сейфе*********************************************/
+class ButtonNumber {
+  constructor(x,y,num) { 
+    this.butX = x;
+    this.butY = y;
+    this.butNum = num;
+    this.butR = 30;
+    this.Txt_font = 50;
+    this.MainObjContainer = new createjs.Container(); 
+    this.ButtonFone = new createjs.Shape();
+    this.ButtonBordr = new createjs.Shape();
+    this.ButtonTxt = new createjs.Text(this.butNum, ""+this.Txt_font*Canvas_Scale+"px Arial", "#000000").set({textAlign: "center", textBaseline: "middle", x:0, y:0, regX: 0, regY: 0,});  //текстовое поле
+    this.MouseOverListener;
+    this.MouseOutListener;
+    this.MouseDownListener;
+    //this.CreateContainer();
+  }
+  
+ CreateContainer(){   
+  if(this.MainObjContainer == null)
+  {
+     alert("MainObjContainer не был создан!");
+     return;
+  }
+    
+  if(this.ButtonFone == null)
+  {
+    alert("ButtonFone не был создан!");
+    return;
+  }
+  
+  if(this.ButtonBordr == null)
+  {
+    alert("ButtonBordr не был создан!");
+    return;
+  }
+  
+  this.MainObjContainer.removeAllChildren();
+  
+  this.ButtonFone.graphics.clear();
+  this.ButtonBordr.graphics.clear();
+  
+  this.ButtonFone.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill('#ffffff').drawCircle(0, 0, this.butR*Canvas_Scale);  
+  this.ButtonFone.set({x:this.butX*Canvas_Scale, y:this.butY*Canvas_Scale, regX: 0, regY: 0});
+  
+  this.ButtonBordr.graphics.setStrokeStyle(3*Canvas_Scale).beginStroke("#ff0000").beginFill("RGBA(255,255,255,0)").drawCircle(0, 0, this.butR*Canvas_Scale);  
+  this.ButtonBordr.set({x:this.butX*Canvas_Scale, y:this.butY*Canvas_Scale, regX: 0, regY: 0});
+   
+  this.ButtonTxt.font = "bold "+this.Txt_font*Canvas_Scale+"px Arial"; //текстовое поле
+  //let TxtWidth = this.ButtonTxt.getMeasuredWidth();
+  this.ButtonTxt.set({x:this.butX*Canvas_Scale, y:(this.butY+3)*Canvas_Scale}); 
+  
+  this.ButInitState();
+  
+   this.MainObjContainer.addChild(this.ButtonFone);
+   this.MainObjContainer.addChild(this.ButtonTxt);
+   this.MainObjContainer.addChild(this.ButtonBordr);
+ }  
+ 
+ ListenersOn()
+ {
+  this.ButInitState();
+  this.MouseOverListener = this.MainObjContainer.on('mouseover', this.OnButMouseOver, this);
+  this.MouseOutListener = this.MainObjContainer.on('mouseout', this.OnButMouseOut, this);
+  this.MouseDownListener = this.MainObjContainer.on('mousedown', this.OnButMouseDown, this);
+ }
+ 
+ ListenersOff()
+ {
+  this.ButInitState();
+  this.MainObjContainer.off('mouseover', this.MouseOverListener);
+  this.MainObjContainer.off('mouseout', this.MouseOutListener);
+  this.MainObjContainer.off('mousedown', this.MouseDownListener);
+ }
+ 
+ ButInitState()
+ {
+  this.ButtonTxt.color = "RGB(0,0,0)";
+  this.ButtonBordr.alpha = 0;
+ }
+ 
+ ButActiveState()
+ {
+  this.ButtonTxt.color = "RGB(255,0,0)";
+  this.ButtonBordr.alpha = 1;
+ }
+ 
+ OnButMouseOver()
+ {
+    this.ButActiveState();
+    OnStageUpdate();
+ }
+ 
+ OnButMouseOut()
+ {
+    this.ButInitState();
+    OnStageUpdate();
+ }
+ 
+ OnButMouseDown()
+ {
+    ScenesArray[currentSceneIndex].OnSetNumber(this.butNum);
+ }
+}
+
+/*******************************класс сейфа*********************************************/
+class SafeClip {
+  constructor(x, y) { 
+    this.MainObjContainer = new createjs.Container(); 
+    this.butX = x;
+    this.butY = y;
+    this.Safe = new createjs.Shape();
+    this.SafeHandle = new createjs.Shape();
+    this.MouseOverListener;
+    this.MouseOutListener;
+    this.MouseDownListener;
+    this.MainNumberFieldSet = new NumberFieldSet(45, 295, 0);
+    this.buttonsNumArr = new Array();
+    this.buttonsNumArr[0] = new ButtonNumber(360, 75, '1');
+    this.buttonsNumArr[1] = new ButtonNumber(430, 75,'2');
+    this.buttonsNumArr[2] = new ButtonNumber(500, 75,'3');    
+    this.buttonsNumArr[3] = new ButtonNumber(360, 155,'4');
+    this.buttonsNumArr[4] = new ButtonNumber(430, 155,'5');
+    this.buttonsNumArr[5] = new ButtonNumber(500, 155,'6');    
+    this.buttonsNumArr[6] = new ButtonNumber(360, 235,'7');
+    this.buttonsNumArr[7] = new ButtonNumber(430, 235,'8');
+    this.buttonsNumArr[8] = new ButtonNumber(500, 235,'9');    
+    this.buttonsNumArr[9] = new ButtonNumber(360, 315,'В'); 
+    this.buttonsNumArr[10] = new ButtonNumber(430, 315,'0');     
+    this.buttonsNumArr[11] = new ButtonNumber(500, 315,'С');  
+    this.CodeArr = new Array();
+    this.CodeArr[0] = -1;
+    this.CodeArr[1] = -1;
+    this.CodeArr[2] = -1;
+    this.CodeArr[3] = -1;
+     // Cashpicture
+    //this.CreateContainer();
+  }
+  
+ CreateContainer(){  
+   if(this.MainObjContainer == null)
+  {
+     alert("MainObjContainer не был создан!");
+     return;
+  }
+    
+  this.Safe.graphics.clear(); 
+  this.SafeHandle.graphics.clear();
+  
+  this.Safe.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(bluecol).drawRect(0, 0, 570*Canvas_Scale, 390*Canvas_Scale);
+  this.Safe.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(lightgreycol).drawRect(20*Canvas_Scale, 20*Canvas_Scale, 530*Canvas_Scale, 350*Canvas_Scale);
+  this.Safe.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(darkgreycol).drawRect(40*Canvas_Scale, 290*Canvas_Scale, 265*Canvas_Scale, 70*Canvas_Scale);
+  this.Safe.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(darkgreycol).drawRect(320*Canvas_Scale, 30*Canvas_Scale, 220*Canvas_Scale, 330*Canvas_Scale);
+  this.Safe.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(bluecol).drawCircle(170*Canvas_Scale,155*Canvas_Scale,125*Canvas_Scale);
+  this.Safe.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(bluecol).drawCircle(170*Canvas_Scale,155*Canvas_Scale,105*Canvas_Scale);
+     
+  this.SafeHandle.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(bluecol).drawRect(30*Canvas_Scale, 0, 40*Canvas_Scale, 210*Canvas_Scale);
+  this.SafeHandle.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(bluecol).drawCircle(50*Canvas_Scale,105*Canvas_Scale,50*Canvas_Scale);
+  this.SafeHandle.set({regX: 50*Canvas_Scale, regY: 105*Canvas_Scale, x:170*Canvas_Scale, y:155*Canvas_Scale});
+
+  
+  for(let i = 0; i < this.buttonsNumArr.length; i++)
+  {
+    this.buttonsNumArr[i].CreateContainer();
+  }
+    
+  this.MainNumberFieldSet.CreateContainer();
+   
+  this.MainObjContainer.addChild(this.Safe);
+  this.MainObjContainer.addChild(this.SafeHandle);
+  this.MainObjContainer.addChild(this.MainNumberFieldSet.MainObjContainer);
+  for(let i = 0; i < this.buttonsNumArr.length; i++)
+  {
+     this.MainObjContainer.addChild(this.buttonsNumArr[i].MainObjContainer);
+  }
+  
+  this.MainObjContainer.set({regX:0, regY:0, x: this.butX*Canvas_Scale, y: this.butY*Canvas_Scale});
+     
+  this.InitState();
+ }  
+ 
+ SetGamerCode()
+ {
+  this.CodeArr[0] = this.MainNumberFieldSet.NumberFieldArr[0].number;
+  this.CodeArr[1] = this.MainNumberFieldSet.NumberFieldArr[1].number;
+  this.CodeArr[2] = this.MainNumberFieldSet.NumberFieldArr[2].number;
+  this.CodeArr[3] = this.MainNumberFieldSet.NumberFieldArr[3].number;  
+  this.MainNumberFieldSet.ClearAll();	  
+ }
+ 
+ SetNewCode()
+ {
+  if(GameRegims.wrepeat == false)
+  {
+    let arr = new Array;
+    arr = [0,1,2,3,4,5,6,7,8,9];
+    for(let i = 0; i < this.CodeArr.length; i++)
+    {
+      let Ind = Math.floor(Math.random()*arr.length);
+      this.CodeArr[i] = arr[Ind];
+      arr.splice(Ind, 1);      
+    }
+  }
+  else if(GameRegims.wrepeat == true)
+  {
+    for(let i = 0; i < this.CodeArr.length; i++)
+    {
+      this.CodeArr[i] = Math.floor(Math.random()*10);
+    }
+  }
+ }
+ 
+ CheckRightNumber(Ind, Num)
+ {
+  if(this.CodeArr[Ind] == Num)
+  {
+    ScenesArray[currentSceneIndex].NumberFielSetdArr[ScenesArray[currentSceneIndex].TryingId].SetNumber(Num, 2);
+    return true;
+  }
+  else
+  {
+    let find = false;
+    for(let i = 0; i < this.CodeArr.length; i++)
+    {
+      if(this.CodeArr[i] == Num)
+	find = true;
+    }
+    if(find)
+      ScenesArray[currentSceneIndex].NumberFielSetdArr[ScenesArray[currentSceneIndex].TryingId].SetNumber(Num, 3);
+    else
+      ScenesArray[currentSceneIndex].NumberFielSetdArr[ScenesArray[currentSceneIndex].TryingId].SetNumber(Num, 4);
+      
+      return false;
+  }    
+ }
+ 
+ CheckRightCode()
+ {
+  let win = true;
+  
+  for(let i=0; i < 4; i++)
+  {
+    if(!this.CheckRightNumber(i, this.MainNumberFieldSet.NumberFieldArr[i].number))
+      win = false;
+  }
+  this.MainNumberFieldSet.ClearAll();
+  
+  return win;	  
+ }
+ 
+ ListenersOn()
+ {
+  this.InitState();
+  this.MouseOverListener = this.SafeHandle.on('mouseover', this.OnButMouseOver, this);
+  this.MouseOutListener = this.SafeHandle.on('mouseout', this.OnButMouseOut, this);
+  this.MouseDownListener = this.SafeHandle.on('mousedown', this.OnButMouseDown, this);
+  for(let i = 0; i < this.buttonsNumArr.length; i++)
+  {
+     this.buttonsNumArr[i].ListenersOn();
+  }
+ }
+ 
+ ListenersOff()
+ {
+  this.InitState();
+  this.SafeHandle.off('mouseover', this.MouseOverListener);
+  this.SafeHandle.off('mouseout', this.MouseOutListener);
+  this.SafeHandle.off('mousedown', this.MouseDownListener);
+  for(let i = 0; i < this.buttonsNumArr.length; i++)
+  {
+     this.buttonsNumArr[i].ListenersOff();
+  }
+ }
+ 
+ InitState()
+ {
+    this.SafeHandle.rotation = 0;
+ }
+ 
+ ActiveState()
+ {
+  this.SafeHandle.rotation = 5;
+ }
+ 
+ OnButMouseOver()
+ {
+    this.ActiveState();
+    OnStageUpdate();
+ }
+ 
+ OnButMouseOut()
+ {
+    this.InitState();
+    OnStageUpdate();
+ }
+ 
+ OnButMouseDown()
+ {
+    ScenesArray[currentSceneIndex].OnOpenSafe();
+    OnStageUpdate();
+ }
+}
+
+/*******************************класс элемента переключателя на сейфе*********************************************/
+class RadioButton {
+  constructor(x,y,id) { 
+    this.butX = x;
+    this.butY = y;
+    this.butID = id;
+    this.MainObjContainer = new createjs.Container(); 
+    this.ButtonFone = new createjs.Shape();
+    this.ButtonSign = new createjs.Shape();
+    this.MouseDownListener;
+    this.RadioOn = true;
+    //this.CreateContainer();
+  }
+  
+ CreateContainer(){   
+  if(this.MainObjContainer == null)
+  {
+     alert("MainObjContainer не был создан!");
+     return;
+  }
+    
+  if(this.ButtonFone == null)
+  {
+    alert("RadioButtonFone не был создан!");
+    return;
+  }
+  
+  if(this.ButtonSign == null)
+  {
+    alert("RadioButtonSign не был создан!");
+    return;
+  }
+  
+  this.MainObjContainer.removeAllChildren();
+  
+  this.ButtonFone.graphics.clear();
+  this.ButtonSign.graphics.clear();
+  
+  this.ButtonFone.graphics.setStrokeStyle(4*Canvas_Scale).beginStroke("#000000").beginFill("#ffffff").drawCircle(0, 0, 30*Canvas_Scale);
+  this.ButtonFone.set({x:this.butX*Canvas_Scale, y:this.butY*Canvas_Scale, regX: 0, regY: 0});
+  
+  this.ButtonSign.graphics.setStrokeStyle(0).beginFill("#000000").drawCircle(0, 0, 15*Canvas_Scale);  //45,140
+  this.ButtonSign.set({x:this.butX*Canvas_Scale, y:this.butY*Canvas_Scale, regX: 0, regY: 0});
+   
+  this.MainObjContainer.addChild(this.ButtonFone);
+  this.MainObjContainer.addChild(this.ButtonSign);
+ }  
+ 
+ ListenersOn()
+ {
+  this.MouseDownListener = this.MainObjContainer.on('mousedown', this.OnButMouseDown, this);
+ }
+ 
+ ListenersOff()
+ {
+  this.MainObjContainer.off('mousedown', this.MouseDownListener);
+ }
+ 
+ SetRadioOn()
+ {
+  this.RadioOn = true;
+  this.ButtonSign.alpha = 1;
+ }
+ 
+ SetRadioOff()
+ {
+  this.RadioOn = false;
+  this.ButtonSign.alpha = 0;
+ }
+ 
+ OnButMouseDown()
+ {
+    ScenesArray[currentSceneIndex].SwitchRadio(this.butID);    
+ }
+}
+
+/*******************************класс элемента флажок на сейфе*********************************************/
+class CheckButton {
+  constructor(x,y,id) { 
+    this.butX = x;
+    this.butY = y;
+    this.size = 55;
+    this.butID = id;
+    this.MainObjContainer = new createjs.Container(); 
+    this.ButtonFone = new createjs.Shape();
+    this.ButtonSign = new createjs.Shape();
+    this.MouseDownListener;
+    this.ButtonOn = false;
+    //this.CreateContainer();
+  }
+  
+ CreateContainer(){   
+  if(this.MainObjContainer == null)
+  {
+     alert("MainObjContainer не был создан!");
+     return;
+  }
+    
+  if(this.ButtonFone == null)
+  {
+    alert("ButtonFone не был создан!");
+    return;
+  }
+  
+  if(this.ButtonSign == null)
+  {
+    alert("ButtonSign не был создан!");
+    return;
+  }
+  
+  this.MainObjContainer.removeAllChildren();
+  
+  this.ButtonFone.graphics.clear();
+  this.ButtonSign.graphics.clear();
+  
+  this.ButtonFone.graphics.setStrokeStyle(4*Canvas_Scale).beginStroke("#000000").beginFill("#ffffff").drawRect(0, 0, this.size*Canvas_Scale, this.size*Canvas_Scale);
+  this.ButtonFone.set({x:this.butX*Canvas_Scale, y:this.butY*Canvas_Scale, regX: 0, regY: 0});
+  
+  this.ButtonSign.graphics.setStrokeStyle(8*Canvas_Scale).beginStroke("#000000").moveTo(0,0).lineTo(13.75*Canvas_Scale,30.5*Canvas_Scale).lineTo(30.5*Canvas_Scale,9*Canvas_Scale);
+  this.ButtonSign.set({x:(this.butX+13.75)*Canvas_Scale, y:(this.butY+8.75)*Canvas_Scale, regX: 0, regY: 0});
+   
+  this.MainObjContainer.addChild(this.ButtonFone);
+  this.MainObjContainer.addChild(this.ButtonSign);
+ }  
+ 
+ ListenersOn()
+ {
+  this.MouseDownListener = this.MainObjContainer.on('mousedown', this.OnButMouseDown, this);
+ }
+ 
+ ListenersOff()
+ {
+  this.MainObjContainer.off('mousedown', this.MouseDownListener);
+ }
+ 
+ SetButtonOn()
+ {
+  this.ButtonOn = true;
+  this.ButtonSign.alpha = 1;
+ }
+ 
+ SetButtonOff()
+ {
+  this.ButtonOn = false;
+  this.ButtonSign.alpha = 0;
+ }
+ 
+ OnButMouseDown()
+ {
+    ScenesArray[currentSceneIndex].SetCheck(this.butID);    
+ }
+}
+
+/*******************************класс поля, в котором отображается одна цифра кода от сейфа*********************************************/
+class NumberField {
+  constructor(x,y,id) { 
+    this.fldX = x;
+    this.fldY = y;
+    this.size = 60;
+    this.txt_font = 50;
+    this.ID = id;
+    this.MainObjContainer = new createjs.Container(); 
+    this.FieldFone = new createjs.Shape();
+    this.FieldFoneR = new createjs.Shape();
+    this.FieldFoneG = new createjs.Shape();
+    this.FieldFoneY = new createjs.Shape();
+    this.Txt = new createjs.Text("0", "bold "+this.txt_font*Canvas_Scale+"px Arial", "#000000").set({textAlign: "center", textBaseline: "middle", x:0, y:0, regX: 0, regY: 0});  //текстовое поле
+   
+    this.FldState = 0;
+    //this.CreateContainer();
+  }
+  
+ CreateContainer(){   
+  if(this.MainObjContainer == null)
+  {
+     alert("MainObjContainer не был создан!");
+     return;
+  }
+    
+  if( (this.FieldFone == null) || (this.FieldFoneR == null) || (this.FieldFoneG == null) || (this.FieldFoneY == null) )
+  {
+    alert("FieldFone не был создан!");
+    return;
+  }
+  
+  this.MainObjContainer.removeAllChildren();
+  this.FieldFone.graphics.clear();
+  this.FieldFoneR.graphics.clear();
+  this.FieldFoneG.graphics.clear();
+  this.FieldFoneY.graphics.clear();
+  
+  this.FieldFone.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill("#ffffff").drawRect(this.fldX*Canvas_Scale, this.fldY*Canvas_Scale, this.size*Canvas_Scale, this.size*Canvas_Scale);
+  this.FieldFoneR.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill("#ff0000").drawRect(this.fldX*Canvas_Scale, this.fldY*Canvas_Scale, this.size*Canvas_Scale, this.size*Canvas_Scale);
+  this.FieldFoneG.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill("#00ff00").drawRect(this.fldX*Canvas_Scale, this.fldY*Canvas_Scale, this.size*Canvas_Scale, this.size*Canvas_Scale);
+  this.FieldFoneY.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill("#ffff00").drawRect(this.fldX*Canvas_Scale, this.fldY*Canvas_Scale, this.size*Canvas_Scale, this.size*Canvas_Scale);
+ 
+  this.Txt.font = "bold "+this.txt_font*Canvas_Scale+"px Arial"; //текстовое поле
+  let TxtWidth = this.Txt.getMeasuredWidth();
+  this.Txt.set({x:(this.fldX+this.size/2)*Canvas_Scale, y:(this.fldY+5+this.size/2)*Canvas_Scale}); 
+  
+  this.SetState(this.FldState);
+  
+  this.MainObjContainer.addChild(this.FieldFone);
+  this.MainObjContainer.addChild(this.FieldFoneR);
+  this.MainObjContainer.addChild(this.FieldFoneG);
+  this.MainObjContainer.addChild(this.FieldFoneY);
+  this.MainObjContainer.addChild(this.Txt);
+ }   
+ 
+  SetState(state){
+    this.FldState = state;
+    switch (this.FldState){
+    case 0:
+	this.FieldFoneR.alpha = 0;
+	this.FieldFoneG.alpha = 0;
+	this.FieldFoneY.alpha = 0;
+	this.Txt.text = 0;
+	this.Txt.alpha = 0;
+	break;
+    case 1:
+	this.FieldFoneR.alpha = 0;
+	this.FieldFoneG.alpha = 0;
+	this.FieldFoneY.alpha = 0;
+	this.Txt.alpha = 1;
+	break;
+    case 2:
+	this.FieldFoneR.alpha = 0;
+	this.FieldFoneG.alpha = 1;
+	this.FieldFoneY.alpha = 0;
+	this.Txt.alpha = 1;
+	break;
+    case 3:
+	this.FieldFoneR.alpha = 0;
+	this.FieldFoneG.alpha = 0;
+	this.FieldFoneY.alpha = 1;
+	this.Txt.alpha = 1;
+	break;
+    case 4:
+	this.FieldFoneR.alpha = 1;
+	this.FieldFoneG.alpha = 0;
+	this.FieldFoneY.alpha = 0;
+	this.Txt.alpha = 1;	
+	break;      
+    default:
+	this.FieldFoneR.alpha = 0;
+	this.FieldFoneG.alpha = 0;
+	this.FieldFoneY.alpha = 0;
+	this.Txt.text = 0;
+	this.Txt.alpha = 0;
+      break;
+     } 
+   OnStageUpdate();
+   }
+}
+
+/*******************************класс четырех полей, задающих код*********************************************/
+class NumberFieldSet {
+  constructor(x,y,id) { 
+    this.fldX = x;
+    this.fldY = y;
+    this.size = 65;
+    this.ID = id;
+    this.MainObjContainer = new createjs.Container(); 
+    this.NumberFieldArr = new Array();
+    this.NumberFieldArr[0] = {obj: new NumberField(this.fldX,this.fldY,0), number: -1};
+    this.NumberFieldArr[1] = {obj: new NumberField(this.fldX+this.size,this.fldY,1), number: -1};
+    this.NumberFieldArr[2] = {obj: new NumberField(this.fldX+this.size*2,this.fldY,2), number: -1};
+    this.NumberFieldArr[3] = {obj: new NumberField(this.fldX+this.size*3,this.fldY,3), number: -1};
+    //this.CreateContainer();
+    this.CurrentInputIndex = 0;
+  }
+  
+ CreateContainer(){   
+  if(this.MainObjContainer == null)
+  {
+     alert("MainObjContainer не был создан!");
+     return;
+  }
+    
+  this.MainObjContainer.removeAllChildren();
+  
+  for(let i = 0; i < this.NumberFieldArr.length; i++)
+  {
+    this.NumberFieldArr[i].obj.CreateContainer();
+    this.MainObjContainer.addChild(this.NumberFieldArr[i].obj.MainObjContainer);
+  }     
+ }  
+ 
+ SetNumber(num, state){
+  if(this.CurrentInputIndex < 4)
+  {
+    this.NumberFieldArr[this.CurrentInputIndex].obj.Txt.text = num;
+    this.NumberFieldArr[this.CurrentInputIndex].number = num;
+    this.NumberFieldArr[this.CurrentInputIndex].obj.SetState(state);
+    this.CurrentInputIndex++;
+  }
+ }
+ 
+ ClearAll(){
+  for(let i = 0; i < this.NumberFieldArr.length; i++)
+  {
+    this.NumberFieldArr[i].obj.SetState(0);
+    this.NumberFieldArr[i].obj.Txt.text = 0;
+    this.NumberFieldArr[i].number = -1;    
+  }     
+  this.CurrentInputIndex = 0;
+ }
+ 
+ CheckRepeats(num)
+ {
+  let findrepeats = false;
+  for(let i = 0; i < this.NumberFieldArr.length; i++)
+  {
+    if(this.NumberFieldArr[i].number == num) 
+    {
+      findrepeats = true;
+      break;
+    }
+  } 
+    
+  return findrepeats;
+ }
+}
+
+/*******************************класс поля с подсказками*********************************************/
+class HelpNotes {
+  constructor(x,y) { 
+    this.fldX = x;
+    this.fldY = y;
+    this.MainObjContainer = new createjs.Container(); 
+    //this.NotesTextArray = new Array();
+    this.Fone = new createjs.Shape();    
+    this.Text1 = new createjs.Text("Подсказки!!!", "bold "+25*Canvas_Scale+"px Arial", "#ff0000").set({textAlign: "left", textBaseline: "top", regX: 0, regY: 0,}); 
+    this.Text2 = new createjs.Text(" ", ""+20*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", regX: 0, regY: 0,}); 
+    this.NotesTextArr = new Array();
+    this.NotesTextArr[0] = ["Установите свой код из 4х цифр, нажав\nна номерные кнопки сейфа.\nПо окончании нажмите кнопку В.\nДля отмены нажмите кнопку С.", "#000000"];
+    this.NotesTextArr[1] = ["Угадайте код из 4х цифр, нажав\nна номерные кнопки сейфа.\nПо окончании нажмите кнопку В.\nДля отмены нажмите кнопку С.", "#000000"];
+    this.NotesTextArr[2] = ["При этих настройках игры повторы\nне разрешаются!", "#ff0000"];
+    this.NotesTextArr[3] = ["Нужно задать 4 цифры!", "#ff0000"];
+    this.NotesTextArr[4] = ["Вы не справились! Начните заново щелкнув по\nручке сейфа!", "#ff0000"];
+    this.NotesTextArr[5] = ["Сейф откроется только если угадать код!", "#ff0000"];
+    this.NotesTextArr[6] = ["Вы нашли правильный код!!!\nОсталось только щелкнуть по ручке сейфа\nи забрать выигрыш!", "#ff0000"];
+  }
+  
+  CreateContainer(){   
+  if(this.MainObjContainer == null)
+  {
+     alert("MainObjContainer не был создан!");
+     return;
+  }
+    
+  this.MainObjContainer.removeAllChildren();
+  this.Fone.graphics.clear();
+  
+  this.Fone.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(lightyellcol).drawRect(this.fldX*Canvas_Scale, this.fldY*Canvas_Scale, 570*Canvas_Scale, 140*Canvas_Scale);
+  //this.FoneBordr.graphics.setStrokeStyle(3*Canvas_Scale).beginStroke("#ff0000").beginFill("RGBA(255,255,255,0)").drawRect(this.fldX*Canvas_Scale, this.fldY*Canvas_Scale, 540*Canvas_Scale, 150*Canvas_Scale); 
+   
+  this.Text1.set({font: "bold "+25*Canvas_Scale+"px Arial", color: "#ff0000", x:(this.fldX+155)*Canvas_Scale, y:(this.fldY+5)*Canvas_Scale});  
+  this.Text2.set({font: ""+20*Canvas_Scale+"px Arial", color: "#000000", x:(this.fldX+5)*Canvas_Scale, y:(this.fldY+35)*Canvas_Scale});
+  this.MainObjContainer.addChild(this.Fone);
+  this.MainObjContainer.addChild(this.Text1);
+  this.MainObjContainer.addChild(this.Text2);
+ }  
+ 
+ SetText(Ind)
+ {
+  if( (Ind >= this.NotesTextArr.length)||(Ind < 0) )
+    this.Text2.text = "";
+    
+  this.Text2.text = this.NotesTextArr[Ind][0];
+  this.Text2.color = this.NotesTextArr[Ind][1];
+ }
+}
+
+/*******************************************класс начальной сцены*********************************************/
+class StartScene extends NewScene{
+  constructor() { 
+  super();
+  //кнопка 
+  this.main_pic = Mainpicture;
+  this.Fone = new createjs.Shape();
+  this.ButtonScene = new ButtonNavigation(25,630,"К игре");  
+  this.RadioButtonArr = new Array();
+  this.RadioButtonArr[0] = new RadioButton(300,655,0);
+  this.RadioButtonArr[1] = new RadioButton(610,655,1);
+  this.CheckButtonObj = new CheckButton(860,625,0);
+  
+  //создать главный контейнер с графическими объектами сцены
+  this.CreateContainer();  
+  }
+  
+  CreateContainer(){ 
+    if(this.SceneContainer == null)
+    {
+      alert("StartScene.SceneContainer не был создан!");
+      return;
+    }
+    
+    this.SceneContainer.removeAllChildren();
+    this.Fone.graphics.clear(); 
+        
+    this.ButtonScene.CreateContainer();
+        
+    this.Fone.graphics.setStrokeStyle(0).beginFill(greencol).drawRect(0,0,w*Canvas_Scale,h*Canvas_Scale);
+    this.Fone.graphics.setStrokeStyle(2).beginStroke("#000000").beginFill("#ffffff").drawRoundRect(250*Canvas_Scale,560*Canvas_Scale,950*Canvas_Scale,150*Canvas_Scale,50*Canvas_Scale);
+    
+    this.main_pic.set({x: 20*Canvas_Scale, y: 20*Canvas_Scale, scaleX: Canvas_Scale, scaleY: Canvas_Scale});
+   
+    let Txt1 = new createjs.Text("Настройки игры", "bold "+35*Canvas_Scale+"px Arial", bluecol).set({textAlign: "left", textBaseline: "top", x:500*Canvas_Scale, y:570*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt2 = new createjs.Text("С компьютером", "bold "+25*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:335*Canvas_Scale, y:645*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt3 = new createjs.Text("Друг с другом", "bold "+25*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:645*Canvas_Scale, y:645*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt4 = new createjs.Text("С повторами цифр", "bold "+25*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:920*Canvas_Scale, y:645*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+  
+    for(let i = 0; i < this.RadioButtonArr.length; i++)
+    {
+      this.RadioButtonArr[i].CreateContainer();
+    }
+    
+    this.CheckButtonObj.CreateContainer();
+    
+    if(!GameRegims.together)
+    {
+      this.RadioButtonArr[0].SetRadioOn();
+      this.RadioButtonArr[1].SetRadioOff();
+    }
+    else
+    {
+      this.RadioButtonArr[0].SetRadioOff();
+      this.RadioButtonArr[1].SetRadioOn();
+    }
+    
+    if(GameRegims.wrepeat)
+      this.CheckButtonObj.SetButtonOn();
+    else
+      this.CheckButtonObj.SetButtonOff();
+     
+    this.SceneContainer.addChild(this.Fone);
+    this.SceneContainer.addChild(this.main_pic);
+    this.SceneContainer.addChild(Txt1);
+    this.SceneContainer.addChild(Txt2);
+    this.SceneContainer.addChild(Txt3);
+    this.SceneContainer.addChild(Txt4);
+    this.SceneContainer.addChild(this.CheckButtonObj.MainObjContainer);
+    for(let i = 0; i < this.RadioButtonArr.length; i++)
+    {
+      this.SceneContainer.addChild(this.RadioButtonArr[i].MainObjContainer);
+    }
+    this.SceneContainer.addChild(this.ButtonScene.ButtonObj); 
+  } 
+  
+  // вызывается когда осуществляется переход к сцене, включает обработчики событий
+  SceneOn(){
+    this.ButtonScene.ListenersOn();
+    for(let i = 0; i < this.RadioButtonArr.length; i++)
+    {
+      this.RadioButtonArr[i].ListenersOn();
+    }
+    this.CheckButtonObj.ListenersOn();
+  }
+  
+   // вызывается когда осуществляется выход из сцены, выключает обработчики событий
+  SceneOff(){
+    this.ButtonScene.ListenersOff(); 
+    for(let i = 0; i < this.RadioButtonArr.length; i++)
+    {
+      this.RadioButtonArr[i].ListenersOff();
+    }
+    this.CheckButtonObj.ListenersOff();
+  }
+  
+  SwitchRadio(ID)
+  {
+    if(ID == 0)
+    {
+	GameRegims.together = false;
+	this.RadioButtonArr[0].SetRadioOn();
+	this.RadioButtonArr[1].SetRadioOff();
+    }
+    else
+    {
+      GameRegims.together = true;
+      this.RadioButtonArr[0].SetRadioOff();
+      this.RadioButtonArr[1].SetRadioOn();
+    }
+     OnStageUpdate();
+  }
+    
+  SetCheck(ID)
+  {
+   GameRegims.wrepeat = !GameRegims.wrepeat;
+   if(GameRegims.wrepeat)
+    this.CheckButtonObj.SetButtonOn();
+   else
+    this.CheckButtonObj.SetButtonOff();
+    
+   OnStageUpdate();
+  }
+}
+
+/*******************************************класс сцены игры*********************************************/
+class GameScene extends NewScene{
+  constructor() { 
+  super();
+  //кнопка 
+  this.note_pic = Notepicture;
+  this.Fone = new createjs.Shape();
+  this.ButtonScene = new ButtonNavigation(25,630,'К настройкам');  
+  this.SafeObj = new SafeClip(650, 25); 
+  this.SafeInside = new createjs.Shape();
+  this.TextFont = 30;
+  this.MoneyNum = new createjs.Text("0", "bold "+45*Canvas_Scale+"px Arial", "#ff0000").set({textAlign: "left", textBaseline: "top", x:30*Canvas_Scale, y:55*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+  this.NumberFielSetdArr = new Array();
+  this.NumberFielSetdArr[0] = new NumberFieldSet(275, 135, 0);
+  this.NumberFielSetdArr[1] = new NumberFieldSet(275, 210, 0);
+  this.NumberFielSetdArr[2] = new NumberFieldSet(275, 285, 0);
+  this.NumberFielSetdArr[3] = new NumberFieldSet(275, 360, 0);
+  this.NumberFielSetdArr[4] = new NumberFieldSet(275, 435, 0);
+  this.NumberFielSetdArr[5] = new NumberFieldSet(275, 510, 0);
+  this.HelpNotesField = new HelpNotes(650,440);
+  this.TryingId = 0;
+  
+  this.CashPicArr = new Array();
+  this.CashPicArr[0] = Cashpicture.clone();
+  this.CashPicArr[1] = Cashpicture.clone();
+  this.CashPicArr[2] = Cashpicture.clone();
+  this.CashPicArr[3] = Cashpicture.clone();
+  this.CashPicArr[4] = Cashpicture.clone();
+  this.CashPicArr[5] = Cashpicture.clone();
+   
+  //создать главный контейнер с графическими объектами сцены
+  this.CreateContainer();  
+  }
+  
+  CreateContainer(){ 
+    if(this.SceneContainer == null)
+    {
+      alert("StartScene.SceneContainer не был создан!");
+      return;
+    }
+    
+    this.SceneContainer.removeAllChildren();
+    this.Fone.graphics.clear();
+    
+    this.Fone.graphics.setStrokeStyle(0).beginFill(greencol).drawRect(0,0,w*Canvas_Scale,430*Canvas_Scale);
+    this.Fone.graphics.setStrokeStyle(0).beginFill(orangecol).drawRect(0,430*Canvas_Scale,w*Canvas_Scale,h*Canvas_Scale);
+    this.Fone.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(lightbluecol).drawRect(40*Canvas_Scale, 25*Canvas_Scale, 500*Canvas_Scale, 560*Canvas_Scale);
+     
+    this.note_pic.set({x: 405*Canvas_Scale, y: 590*Canvas_Scale, scaleX: 0.8*Canvas_Scale, scaleY: 0.8*Canvas_Scale});
+   
+    this.ButtonScene.CreateContainer();
+    this.SafeObj.CreateContainer();
+    this.HelpNotesField.CreateContainer();
+    
+    let Txt1 = new createjs.Text("Всего достали (руб):", "bold "+this.TextFont*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:50*Canvas_Scale, y:30*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt2 = new createjs.Text("Попытка 1:", "bold "+this.TextFont*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:65*Canvas_Scale, y:150*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt3 = new createjs.Text("Попытка 2:", "bold "+this.TextFont*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:65*Canvas_Scale, y:225*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt4 = new createjs.Text("Попытка 3:", "bold "+this.TextFont*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:65*Canvas_Scale, y:300*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt5 = new createjs.Text("Попытка 4:", "bold "+this.TextFont*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:65*Canvas_Scale, y:375*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt6 = new createjs.Text("Попытка 5:", "bold "+this.TextFont*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:65*Canvas_Scale, y:450*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+    let Txt7 = new createjs.Text("Попытка 6:", "bold "+this.TextFont*Canvas_Scale+"px Arial", "#000000").set({textAlign: "left", textBaseline: "top", x:65*Canvas_Scale, y:525*Canvas_Scale, regX: 0, regY: 0,});  //текстовое поле
+   
+    this.MoneyNum.set({font: "bold "+45*Canvas_Scale+"px Arial", x:55*Canvas_Scale, y:70*Canvas_Scale});
+   
+    let MoneyTxtField = new createjs.Shape();
+    MoneyTxtField.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill("#ffffff").drawRect(50*Canvas_Scale, 65*Canvas_Scale, 480*Canvas_Scale, 50*Canvas_Scale);
+    
+    for(var i = 0; i < this.NumberFielSetdArr.length; i++)
+    {
+      this.NumberFielSetdArr[i].CreateContainer();
+    }
+    
+    this.SafeInside.graphics.clear(); 
+  
+    this.SafeInside.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(bluecol).drawRect(650*Canvas_Scale, 25*Canvas_Scale, 570*Canvas_Scale, 390*Canvas_Scale);
+    this.SafeInside.graphics.setStrokeStyle(2*Canvas_Scale).beginStroke("#000000").beginFill(darkgreycol).drawRect(670*Canvas_Scale, 45*Canvas_Scale, 530*Canvas_Scale, 350*Canvas_Scale);
+    
+    for(var i = 0; i < 3; i++)
+    {
+      this.CashPicArr[i].set({x: (750+125*i)*Canvas_Scale, y: 200*Canvas_Scale, scaleX: 0.4*Canvas_Scale, scaleY: 0.4*Canvas_Scale});
+      this.CashPicArr[i+3].set({x: (750+125*i)*Canvas_Scale, y: 110*Canvas_Scale, scaleX: 0.4*Canvas_Scale, scaleY: 0.4*Canvas_Scale});
+    }
+    
+    this.SceneContainer.addChild(this.Fone);
+    this.SceneContainer.addChild(Txt1);
+    this.SceneContainer.addChild(Txt2);
+    this.SceneContainer.addChild(Txt3);
+    this.SceneContainer.addChild(Txt4);
+    this.SceneContainer.addChild(Txt5);
+    this.SceneContainer.addChild(Txt6);
+    this.SceneContainer.addChild(Txt7);
+    this.SceneContainer.addChild(MoneyTxtField); 
+    this.SceneContainer.addChild(this.MoneyNum);
+    this.SceneContainer.addChild(this.HelpNotesField.MainObjContainer);
+    this.SceneContainer.addChild(this.note_pic);
+    for(var i = 0; i < this.NumberFielSetdArr.length; i++)
+    {
+      this.SceneContainer.addChild(this.NumberFielSetdArr[i].MainObjContainer);
+    }
+    this.SceneContainer.addChild(this.SafeInside);
+    for(var i = 0; i < this.CashPicArr.length; i++)
+    {
+      this.SceneContainer.addChild(this.CashPicArr[i]);
+    }
+    this.SceneContainer.addChild(this.SafeObj.MainObjContainer);
+    this.SceneContainer.addChild(this.ButtonScene.ButtonObj);
+    
+  } 
+  
+  InitNewGame()
+  {
+    this.SafeObj.MainObjContainer.set({skewY:0, scaleX:1});
+    this.SafeObj.MainNumberFieldSet.ClearAll();
+    for(let i = 0; i < this.NumberFielSetdArr.length; i++)
+    {
+      this.NumberFielSetdArr[i].ClearAll();
+    }
+    for(var i = 0; i < this.CashPicArr.length; i++)
+    {
+      this.CashPicArr[i].alpha = 0;
+    }
+    this.TryingId = 0;
+    if(GameRegims.together == true)
+    {
+      GameRegims.inputnumb = 'set';
+      this.HelpNotesField.SetText(0);      
+    }
+    else if(GameRegims.together == false)
+    {
+      GameRegims.inputnumb = 'inp';
+      this.SafeObj.SetNewCode();   
+      this.HelpNotesField.SetText(1);     
+    }
+    OnStageUpdate();
+  }
+  
+  OnSetNumber(num){
+    if( (GameRegims.inputnumb != 'inp') && (GameRegims.inputnumb != 'set') )
+      return;
+      
+    if(num == "С")
+    {
+      this.SafeObj.MainNumberFieldSet.ClearAll();
+    }
+    else if(num == "В")
+    {
+      if( GameRegims.inputnumb == 'set' )
+      {
+	if(this.SafeObj.MainNumberFieldSet.CurrentInputIndex >= 4)
+	{
+	  this.SafeObj.SetGamerCode();
+	  GameRegims.inputnumb = 'inp';
+	  this.HelpNotesField.SetText(1);
+	}
+	else
+	{
+	  this.HelpNotesField.SetText(3);
+	}
+      }
+      else if( GameRegims.inputnumb == 'inp' )
+      {
+	if(this.SafeObj.MainNumberFieldSet.CurrentInputIndex >= 4)
+	{
+	  let win = this.SafeObj.CheckRightCode();
+	  if(win)
+	  {	
+	    GameRegims.inputnumb = 'win';
+	    this.HelpNotesField.SetText(6);
+	  }
+	  else if(!win)
+	  {
+	    this.TryingId++;
+	    if(this.TryingId >= this.NumberFielSetdArr.length)
+	    {
+	      GameRegims.inputnumb = 'blk';
+	      this.HelpNotesField.SetText(4);
+	    }
+	    else
+	    {
+	      GameRegims.inputnumb = 'inp';
+	      this.HelpNotesField.SetText(1);
+	    }
+	  }
+	}
+	else
+	{
+	  this.HelpNotesField.SetText(3);
+	}    
+      }
+    }
+    else
+    {
+      if(this.SafeObj.MainNumberFieldSet.CurrentInputIndex >= 4)
+      {
+	this.HelpNotesField.SetText(3);
+	OnStageUpdate();
+	return;
+      }
+      
+      if(GameRegims.wrepeat)
+	  this.SafeObj.MainNumberFieldSet.SetNumber(num, 1);
+	else if(!GameRegims.wrepeat)
+	{
+	  if(!this.SafeObj.MainNumberFieldSet.CheckRepeats(num))
+	    this.SafeObj.MainNumberFieldSet.SetNumber(num, 1);
+	  else
+	  {
+	    this.HelpNotesField.SetText(2);	  
+	  }
+	}
+     }
+    OnStageUpdate();
+  }
+  
+  OnOpenSafe()
+  {
+    if(GameRegims.inputnumb == 'blk')
+    {
+      this.InitNewGame();
+    }
+    else if(GameRegims.inputnumb == 'win')
+    {
+      GameRegims.inputnumb == 'anm';
+      let rest = this.NumberFielSetdArr.length-this.TryingId;
+      for(var i = 0; i < rest; i++)
+      {
+	this.CashPicArr[i].alpha = 1;
+      }
+      
+      this.SafeObj.MainObjContainer.set({skewY:0, scaleX:1, regX:0, regY:0});
+      //createjs.Tween.get(this.SafeObj.MainObjContainer).to({alpha:0}, 1000).call(this.SafeOpenAnimComplete, ScenesArray[currentSceneIndex]);
+     createjs.Tween.get(this.SafeObj.MainObjContainer)
+		.to({skewY: 50, scaleX: 0.1}, 1200, createjs.Ease.quadOut).wait(1000)
+		.call(OnSafeOpenAnimComplete, this);
+     
+    }
+    else if( (GameRegims.inputnumb == 'inp') || (GameRegims.inputnumb == 'set') )
+    {
+      this.HelpNotesField.SetText(5); 
+      OnStageUpdate();
+    }
+  }
+  
+  SafeOpenAnimComplete() {
+    let money = (this.NumberFielSetdArr.length-this.TryingId)*MoneyMin;
+    GameRegims.moneycount += money;
+    this.MoneyNum.text = GameRegims.moneycount;
+    this.InitNewGame();
+  }
+  
+  // вызывается когда осуществляется переход к сцене, включает обработчики событий
+  SceneOn(){
+    this.ButtonScene.ListenersOn();
+    this.SafeObj.ListenersOn();  
+    this.InitNewGame();
+  }
+  
+   // вызывается когда осуществляется выход из сцены, выключает обработчики событий
+  SceneOff(){
+    this.ButtonScene.ListenersOff(); 
+    this.SafeObj.ListenersOff();   
+  }  
+}
+
+/*******************************************функция инициализации всех объектов*********************************************/
+function init()
+{
+  /*const devices = new RegExp('Android|webOS|iPhone|iPad|iPod|BlackBerry|BB|PlayBook|IEMobile|Windows Phone|Kindle|Silk|Opera Mini', "i");
+
+   if (devices.test(navigator.userAgent))
+   {
+     alert("Вы используете мобильное устройство (телефон или планшет).")
+   }
+   else
+   {
+     alert("Вы используете ПК.")
+   } */
+   
+  canvas = document.getElementById("DrawingCanvas");//находим элемент canvas и присваиваем указателю ссылку на него  
+  
+  stage = new createjs.Stage(canvas); //создаем новую сцену
+  
+  DebuggText = new createjs.Text("Отладка", "bold "+DebuggText_font*Canvas_Scale+"px Arial", "#ffffff").set({textAlign: "left", textBaseline: "top", x:0, y:0});
+  DebuggText.text = "";
+  
+  ScenesArray = new Array();
+  
+  OnResize();
+  
+  LoadSceneObj = new LoadScene();
+  
+  //добавляем сцену загрузки элементов игры
+  stage.addChild(LoadSceneObj.SceneContainer);
+  stage.update();
+  
+  preloadManifest = [{id: "MainPic", src:"pictures/Zastavka.png"},
+		      {id: "NotesPic", src:"pictures/Notes.png"},
+		      {id: "CashPic", src:"pictures/Cash.png"}];
+  
+  let assetsPath = "SafeCode/";
+  
+  preload = new createjs.LoadQueue(true, assetsPath);
+  preload.addEventListener("complete", doneLoading); // add an event listener for when load is completed
+  preload.addEventListener("progress", updateLoading);
+  preload.loadManifest(preloadManifest);      
+}
+
+/***********************вызывается во время загрузки программы, отображает индикацию загрузки******************************/
+function updateLoading() {
+        //пишем процесс загрузки картинок
+	LoadSceneObj.SetProgress(preload.progress);
+ 	stage.update();
+}
+
+/****************************************окончание загрузки картинок*****************************************************/
+function doneLoading() {
+  /*выполняется при завершении загрузки картинок*/
+  
+  stage.removeAllChildren();
+  
+  Mainpicture = new createjs.Bitmap(preload.getResult("MainPic"));
+  Notepicture = new createjs.Bitmap(preload.getResult("NotesPic"));
+  Cashpicture = new createjs.Bitmap(preload.getResult("CashPic"));
+    
+  ScenesArray[0] = new StartScene();
+  ScenesArray[1] = new GameScene();
+  
+  stage.addChildAt(ScenesArray[currentSceneIndex].SceneContainer, 0);
+  stage.addChildAt(DebuggText, 1);
+   
+  ScenesArray[currentSceneIndex].SceneOn();
+  
+  stage.update();
+    
+  createjs.Touch.enable(stage);
+  //createjs.Ticker.addEventListener("tick", stage);
+   /*if(!createjs.Ticker.hasEventListener("tick"))
+   {
+      createjs.Ticker.framerate = 300; 
+      createjs.Ticker.addEventListener("tick", handleTick);  
+   }
+   else
+    alert("Ошибка создания таймера!");*/
+    
+  stage.enableMouseOver(300);
+  window.addEventListener("resize", OnResize, false);
+}
+
+/*function handleTick(event) {
+  
+}*/
+
+/*******************************************функция ресайза программы*********************************************/
+function OnResize(){
+  
+  let canvas_width  = window.innerWidth-10;
+  let canvas_height = window.innerHeight-20; 
+  
+  if(canvas_width*h/w <= canvas_height)
+  {
+    Canvas_Scale = canvas_width/w;
+  }
+  else if(canvas_height*w/h <= canvas_width)
+  {
+    Canvas_Scale = canvas_height/h;
+  }
+  else
+  {
+    Canvas_Scale = 1;
+  }
+  
+  canvas.width  = w*Canvas_Scale;
+  canvas.height = h*Canvas_Scale;  
+   
+  DebuggText.font = "bold "+DebuggText_font*Canvas_Scale+"px Arial";
+  
+  //перерисовываем все сцены  в соответствии с новыми размерами
+  for(let i = 0; i < ScenesArray.length; i++)
+  {
+    ScenesArray[i].CreateContainer();
+  }
+  
+  stage.update();
+}
+
+function SetNextScene()
+{
+  if(ScenesArray.length == 0)
+    return;
+  
+  ScenesArray[currentSceneIndex].SceneOff();
+  stage.removeChildAt(0);
+  currentSceneIndex++;
+  if(currentSceneIndex>=ScenesArray.length)
+    currentSceneIndex = 0;
+  stage.addChildAt(ScenesArray[currentSceneIndex].SceneContainer, 0);
+  ScenesArray[currentSceneIndex].SceneOn();
+  stage.update();
+}
+
+function OnStageUpdate()
+{
+ stage.update();
+}
+
+function OnSafeOpenAnimComplete() {
+    ScenesArray[currentSceneIndex].SafeOpenAnimComplete();
+}
+
+</script>
+</head>
+<body onload="init();">
+ <div align = 'center'><canvas id="DrawingCanvas" width="1280" height="720"></canvas></div>
+</body>
+</html>
